@@ -1,0 +1,88 @@
+name: TWRP Building
+on: 
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/**'
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Space Pre
+        run: |
+          echo "======================="
+          echo "Space usage:"
+          echo "======================="
+          df -h
+      - name: Install and uninstall packages
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          docker rmi `docker images -q`
+          sudo snap remove --purge lxd
+          sudo snap remove --purge core20
+          sudo snap remove --purge snapd
+          sudo -E apt -y autoremove --purge snapd
+          sudo sh -c "echo Package: snapd > /etc/apt/preferences.d/nosnap.pref"
+          sudo sh -c "echo Pin: release a=* >> /etc/apt/preferences.d/nosnap.pref"
+          sudo sh -c "echo Pin-Priority: -10 >> /etc/apt/preferences.d/nosnap.pref"
+          sudo -E sh -c "apt autoremove -y --purge google* azure* ruby* php* apache* aspnet* cloud-* dbus dotnet* firebird* firefox* llvm* moby* mongodb* mono* msbuild* mssql* mysql* nginx* perl* postgresql* powershell* r-* rpm* x11* xserver* *-icon-theme git-* grub* gsettings* 2> /dev/null" || true
+          sudo -E apt-get update
+          sudo -E apt install bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev wget tree -y
+          sudo -E apt-get clean
+          sudo rm -rf /usr/local/lib/heroku /usr/local/lib/node_modules /usr/local/lib/android /usr/local/share/chromium /usr/share/dotnet /usr/local/share/phantomjs* /usr/local/share/*driver /usr/local/share/vcpkg /etc/mysql /etc/php /etc/skel /etc/apt/sources.list.d ~/.dotnet ~/runners/*.tgz
+          sudo sh -c "curl https://storage.googleapis.com/git-repo-downloads/repo > /usr/bin/repo"
+          sudo chmod a+x /usr/bin/repo
+          
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 64
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-haskell: 'true'
+          remove-android: 'true'
+              
+      - name: Pull codes
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "Github Action"
+          mkdir lineage
+          cd lineage
+          repo init --depth=1 -u https://github.com/TeamWin/android_bootable_recovery.git -b android-11
+          repo sync -c -f --no-tags --no-clone-bundle -j 16
+          git clone https://github.com/peasoft/twrp_device_oppo_PBCM10.git --depth=1 device/oppo/PBCM10 -b android-11
+          find . -name ".git"  | xargs rm -rf
+          rm -rf .repo
+        shell: bash
+        
+      - name: Space Post
+        run: |
+          echo "======================="
+          echo "Space usage:"
+          echo "======================="
+          df -h
+      
+#      - name : Upload Logs
+#        uses: actions/upload-artifact@master
+#        with:
+#          name: lineageos-source-tree
+#          path: lineage/treelog
+      
+      - name: Build TWRP
+        run: |
+          cd lineage
+          source build/envsetup.sh
+          false
+          lunch cm_A37-user
+          make -j8
+      
+      - name: Debug
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3
+          
+      - name : Upload ROM
+        uses: actions/upload-artifact@master
+        with:
+          name: twrp-PBCM10
+          path: lineage/out
